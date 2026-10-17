@@ -124,11 +124,24 @@ function summarizeReceipt(label, hash, receipt) {
 
 async function writeTx(client, address, label, functionName, args, value = 0n) {
   const hash = await client.writeContract({ address, functionName, args, value });
-  const receipt = await client.waitForTransactionReceipt({
-    hash,
-    retries: 180,
-    interval: 5000,
-  });
+  console.log(JSON.stringify({ label, hash, submitted: true }));
+  let receipt;
+  let lastError;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    try {
+      receipt = await client.waitForTransactionReceipt({
+        hash,
+        retries: 180,
+        interval: 5000,
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      console.error(`${label}: receipt polling attempt ${attempt} failed: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5000 * attempt, 30000)));
+    }
+  }
+  if (!receipt) throw lastError;
   const summary = summarizeReceipt(label, hash, receipt);
   console.log(JSON.stringify(summary));
   return summary;
@@ -146,6 +159,7 @@ async function main() {
   const contractAddress = argValue("--contract", DEFAULT_CONTRACT_ADDRESS);
   if (!contractAddress) throw new Error("Pass the deployed address with --contract.");
   const outPath = argValue("--out", `live-studionet-${Date.now()}.json`);
+  const resumeValue = argValue("--resume-covenant", "");
   const obligor = await getClient(OBLIGOR_ACCOUNT);
   const beneficiary = await getClient(BENEFICIARY_ACCOUNT);
 
@@ -155,9 +169,13 @@ async function main() {
   const beforeCheckpointCount = numberValue(
     await readCall(obligor.client, contractAddress, "checkpoint_count_total"),
   );
-  const covenantId = beforeCovenantCount;
-  const firstCheckpointId = beforeCheckpointCount;
-  const secondCheckpointId = beforeCheckpointCount + 1;
+  const isResume = resumeValue !== "";
+  const covenantId = isResume ? Number(resumeValue) : beforeCovenantCount;
+  let checkpointIds = isResume
+    ? await readCall(obligor.client, contractAddress, "list_checkpoints_for_covenant", [covenantId])
+    : [];
+  let firstCheckpointId = checkpointIds.length > 0 ? numberValue(checkpointIds[0]) : beforeCheckpointCount;
+  let secondCheckpointId = checkpointIds.length > 1 ? numberValue(checkpointIds[1]) : beforeCheckpointCount + 1;
   const records = [
     {
       label: "initial-state",
@@ -168,97 +186,146 @@ async function main() {
     },
   ];
 
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "create-covenant",
-      "create_covenant",
-      [beneficiary.account.address, TERMS, EVIDENCE_POLICY, 3, 1, 3600, 600, 900, 2, 1],
-      3n,
-    ),
-  );
-  records.push({
-    label: "after-create",
-    covenant: await readCall(obligor.client, contractAddress, "get_covenant", [covenantId]),
-  });
+  if (!isResume) {
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        "create-covenant",
+        "create_covenant",
+        [beneficiary.account.address, TERMS, EVIDENCE_POLICY, 3, 1, 3600, 600, 900, 2, 1],
+        3n,
+      ),
+    );
+    records.push({
+      label: "after-create",
+      covenant: await readCall(obligor.client, contractAddress, "get_covenant", [covenantId]),
+    });
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        "submit-compliant-period-1",
+        "submit_attestation",
+        [covenantId, GOOD_ATTESTATION],
+      ),
+    );
+  }
 
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "submit-compliant-period-1",
-      "submit_attestation",
-      [covenantId, GOOD_ATTESTATION],
-    ),
-  );
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "review-compliant-period-1",
-      "review_attestation",
-      [firstCheckpointId],
-    ),
-  );
-  const firstCheckpoint = await readCall(
+  let firstCheckpoint = await readCall(
     obligor.client,
     contractAddress,
     "get_checkpoint",
     [firstCheckpointId],
   );
+  for (let attempt = 1; ["SUBMITTED", "ERRORED"].includes(firstCheckpoint.status) && attempt <= 3; attempt += 1) {
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        `review-compliant-period-1-${attempt}`,
+        "review_attestation",
+        [firstCheckpointId],
+      ),
+    );
+    firstCheckpoint = await readCall(
+      obligor.client,
+      contractAddress,
+      "get_checkpoint",
+      [firstCheckpointId],
+    );
+  }
   if (firstCheckpoint.status !== "CLEARED" || firstCheckpoint.reason_code !== "COVENANT_SATISFIED") {
     throw new Error(`Period 1 did not clear: ${JSON.stringify(firstCheckpoint)}`);
   }
   records.push({ label: "period-1-final", checkpoint: firstCheckpoint });
 
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "submit-prohibited-period-2",
-      "submit_attestation",
-      [covenantId, BAD_ATTESTATION],
-    ),
+  let currentCovenant = await readCall(obligor.client, contractAddress, "get_covenant", [covenantId]);
+  checkpointIds = await readCall(
+    obligor.client,
+    contractAddress,
+    "list_checkpoints_for_covenant",
+    [covenantId],
   );
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "review-prohibited-period-2",
-      "review_attestation",
-      [secondCheckpointId],
-    ),
-  );
-  const cureRequired = await readCall(
+  if (!currentCovenant.has_open_checkpoint) {
+    secondCheckpointId = numberValue(
+      await readCall(obligor.client, contractAddress, "checkpoint_count_total"),
+    );
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        "submit-prohibited-period-2",
+        "submit_attestation",
+        [covenantId, BAD_ATTESTATION],
+      ),
+    );
+  } else if (checkpointIds.length > 1) {
+    secondCheckpointId = numberValue(checkpointIds[1]);
+  }
+
+  let cureRequired = await readCall(
     obligor.client,
     contractAddress,
     "get_checkpoint",
     [secondCheckpointId],
   );
+  for (let attempt = 1; ["SUBMITTED", "ERRORED"].includes(cureRequired.status) && attempt <= 3; attempt += 1) {
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        `review-prohibited-period-2-${attempt}`,
+        "review_attestation",
+        [secondCheckpointId],
+      ),
+    );
+    cureRequired = await readCall(
+      obligor.client,
+      contractAddress,
+      "get_checkpoint",
+      [secondCheckpointId],
+    );
+  }
   if (cureRequired.status !== "CURE_REQUIRED") {
     throw new Error(`Period 2 did not enter cure: ${JSON.stringify(cureRequired)}`);
   }
   records.push({ label: "period-2-cure-required", checkpoint: cureRequired });
 
-  records.push(
-    await writeTx(
-      obligor.client,
-      contractAddress,
-      "submit-failed-cure",
-      "submit_cure",
-      [secondCheckpointId, FAILED_CURE],
-    ),
+  if (cureRequired.status === "CURE_REQUIRED") {
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        "submit-failed-cure",
+        "submit_cure",
+        [secondCheckpointId, FAILED_CURE],
+      ),
+    );
+  }
+  let cureResult = await readCall(
+    obligor.client,
+    contractAddress,
+    "get_checkpoint",
+    [secondCheckpointId],
   );
-  records.push(
-    await writeTx(
+  for (let attempt = 1; ["CURE_PENDING", "CURE_ERRORED"].includes(cureResult.status) && attempt <= 3; attempt += 1) {
+    records.push(
+      await writeTx(
+        obligor.client,
+        contractAddress,
+        `review-failed-cure-${attempt}`,
+        "review_cure",
+        [secondCheckpointId],
+      ),
+    );
+    cureResult = await readCall(
       obligor.client,
       contractAddress,
-      "review-failed-cure",
-      "review_cure",
+      "get_checkpoint",
       [secondCheckpointId],
-    ),
-  );
+    );
+  }
 
   const finalCovenant = await readCall(
     obligor.client,
@@ -288,9 +355,13 @@ async function main() {
   if (numberValue(finalCovenant.breach_count) !== 1 || numberValue(finalCovenant.bond_remaining) !== 0) {
     throw new Error(`Unexpected final bond accounting: ${JSON.stringify(finalCovenant)}`);
   }
+  const expectedCovenantCount = isResume ? beforeCovenantCount : beforeCovenantCount + 1;
+  const expectedCheckpointCount = isResume
+    ? Math.max(beforeCheckpointCount, secondCheckpointId + 1)
+    : beforeCheckpointCount + 2;
   if (
-    finalCovenantCount !== beforeCovenantCount + 1 ||
-    finalCheckpointCount !== beforeCheckpointCount + 2
+    finalCovenantCount !== expectedCovenantCount ||
+    finalCheckpointCount !== expectedCheckpointCount
   ) {
     throw new Error("Final counters do not match one covenant and two checkpoints.");
   }
