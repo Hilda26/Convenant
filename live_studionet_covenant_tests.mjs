@@ -11,7 +11,7 @@ const chains = await import(
   "file:///C:/Users/HP/AppData/Roaming/npm/node_modules/genlayer/node_modules/genlayer-js/dist/chains/index.js"
 );
 
-const DEFAULT_CONTRACT_ADDRESS = "";
+const DEFAULT_CONTRACT_ADDRESS = "0xfF956A669432b4BcAe765d4a7B2B3c7041BFCf68";
 const OBLIGOR_ACCOUNT = "briefbond-freelancer";
 const BENEFICIARY_ACCOUNT = "briefbond-trigger";
 

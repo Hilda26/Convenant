@@ -133,6 +133,17 @@ pytest -q
 Current verification: 15 direct VM tests pass and the GenVM linter validates
 all 12 public methods.
 
+## StudioNet deployment
+
+- Contract: `0xfF956A669432b4BcAe765d4a7B2B3c7041BFCf68`
+- Explorer: `https://explorer-studio.genlayer.com/address/0xfF956A669432b4BcAe765d4a7B2B3c7041BFCf68`
+- Deployment transaction: `0xb4f358a989f844b1d9032efbcabdd11f1722f0f7def6e3f695de8ab2d88fa6a6`
+- Live lifecycle: passed through compliant clearance, cure-required rejection,
+  failed cure, breach, and terminal default payout.
+
+See `LIVE_TESTS.md` for every transaction and verified state, and
+`SUBMISSION.md` for submission-ready project copy and parameters.
+
 ## Repository layout
 
 ```text
