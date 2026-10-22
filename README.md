@@ -136,9 +136,11 @@ all 12 public methods.
 
 ## StudioNet deployment
 
-- Contract: `0xfF956A669432b4BcAe765d4a7B2B3c7041BFCf68`
-- Explorer: `https://explorer-studio.genlayer.com/address/0xfF956A669432b4BcAe765d4a7B2B3c7041BFCf68`
-- Deployment transaction: `0xb4f358a989f844b1d9032efbcabdd11f1722f0f7def6e3f695de8ab2d88fa6a6`
+- Contract: `0x8fF28Cf68B492EEd5C911a913ef1E5Bf4fdb75d2`
+- Explorer: `https://explorer-studio.genlayer.com/address/0x8fF28Cf68B492EEd5C911a913ef1E5Bf4fdb75d2`
+- Deployment transaction: `0xdeea1e398da6042ad56a9e8e0aa64e9ca32fc3cdc49cff333122387a7f54f1b2`
+- Validator-time safety: comparative output has exactly two bound fields; all
+  timestamps and schedule updates use deterministic GenVM transaction time.
 - Live lifecycle: passed through compliant clearance, cure-required rejection,
   failed cure, breach, and terminal default payout.
 
