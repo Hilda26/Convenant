@@ -46,6 +46,7 @@ deadlines, amounts, identities, state transitions, and transfers.
 
 - AI output is restricted to a boolean and a finite reason-code set.
 - Consensus cannot select an address, deadline, transfer, or slash amount.
+- Consensus cannot supply time; schedules use deterministic transaction time.
 - Terms and evidence policy are immutable after funding.
 - Only one checkpoint can be open per covenant.
 - Malformed output and fetch failure are retryable and never slash collateral.
@@ -62,7 +63,8 @@ data-handling promises, certifications, licensing, or DAO service mandates.
 ### Validation
 
 - GenVM lint and schema validation: passed.
-- Direct VM suite: 15 tests passed.
+- Direct VM suite: 16 tests passed, including rejection of unbound timestamp
+  fields in comparative output.
 - Live schema: 12 public methods exposed.
 - StudioNet lifecycle: passed.
 - Live compliant evidence: `CLEARED / COVENANT_SATISFIED`.

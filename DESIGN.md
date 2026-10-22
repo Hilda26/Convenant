@@ -14,6 +14,11 @@ or a noncompliant result with one of five finite rejection codes. Contract code
 validates that the boolean and reason code agree. An unknown, contradictory, or
 malformed result enters a retryable error state and never causes a slash.
 
+The consensus response is rejected unless it contains exactly those two fields.
+It cannot supply a timestamp. Review times, cure deadlines, settlement times,
+and rolling next-period due dates are derived only from deterministic GenVM
+transaction time outside the nondeterministic comparative call.
+
 The contract deterministically fixes:
 
 - the obligor and beneficiary;
@@ -84,8 +89,9 @@ parser rejects. The checkpoint becomes `ERRORED` or `CURE_ERRORED`, remains open
 and can be reviewed again. No payment occurs.
 
 Malformed, unknown, or boolean-inconsistent model output follows the same path.
-Consensus timestamps are required and checked against evidence submission and,
-for cures, the cure deadline.
+Deterministic transaction time is checked against evidence submission and, for
+cures, the cure deadline. No leader- or model-supplied time enters contract
+state.
 
 ## Prompt-injection boundary
 

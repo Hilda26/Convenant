@@ -222,8 +222,44 @@ def test_rejected_attestation_enters_cure_without_slashing(
     checkpoint = contract.get_checkpoint(checkpoint_id)
     assert checkpoint["status"] == "CURE_REQUIRED"
     assert checkpoint["cure_deadline"]
+    reviewed_at = datetime.fromisoformat(checkpoint["reviewed_at"])
+    cure_deadline = datetime.fromisoformat(checkpoint["cure_deadline"])
+    assert (cure_deadline - reviewed_at).total_seconds() == CURE_WINDOW
     assert contract.get_covenant(covenant_id)["bond_remaining"] == BOND
     assert vm._balances.get(_addr_bytes(direct_bob), 0) == 0
+
+
+def test_consensus_output_cannot_supply_an_unbound_schedule_timestamp(
+    direct_deploy, direct_vm_with_transfers, direct_alice, direct_bob
+):
+    vm = direct_vm_with_transfers
+    contract = _deploy(direct_deploy, vm, direct_alice)
+    covenant_id = _create(contract, vm, direct_alice, direct_bob)
+    checkpoint_id = _submit(contract, vm, direct_alice, covenant_id)
+
+    vm.mock_web(EVIDENCE_PATTERN, {"status": 200, "body": "Evidence is incomplete."})
+    vm.mock_llm(
+        JUDGE_PATTERN,
+        '{"compliant":false,"reason_code":"INSUFFICIENT_EVIDENCE",'
+        '"observed_at":"2099-01-01T00:00:00+00:00"}',
+    )
+    contract.review_attestation(checkpoint_id)
+    checkpoint = contract.get_checkpoint(checkpoint_id)
+    assert checkpoint["status"] == "ERRORED"
+    assert checkpoint["cure_deadline"] == ""
+    assert contract.get_covenant(covenant_id)["bond_remaining"] == BOND
+
+    vm.clear_mocks()
+    retry_at = _iso_plus(checkpoint["submitted_at"], 120)
+    warp_to(vm, retry_at)
+    _mock_decision(vm, False, "INSUFFICIENT_EVIDENCE")
+    contract.review_attestation(checkpoint_id)
+    checkpoint = contract.get_checkpoint(checkpoint_id)
+    reviewed_at = datetime.fromisoformat(checkpoint["reviewed_at"])
+    cure_deadline = datetime.fromisoformat(checkpoint["cure_deadline"])
+    assert checkpoint["status"] == "CURE_REQUIRED"
+    assert reviewed_at == datetime.fromisoformat(retry_at)
+    assert (cure_deadline - reviewed_at).total_seconds() == CURE_WINDOW
 
 
 def test_accepted_cure_clears_checkpoint_without_slash(

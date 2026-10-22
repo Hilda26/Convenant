@@ -45,7 +45,8 @@ CLEARED/BREACHED --> next period, COMPLETED, or DEFAULTED
 
 AI consensus only answers one constrained question: whether the supplied
 evidence satisfies the fixed covenant. It cannot choose a beneficiary, bond,
-slash amount, deadline, period, or transfer destination.
+slash amount, timestamp, deadline, period, or transfer destination. All schedule
+values are derived from deterministic GenVM transaction time.
 
 ## Contract interface
 
@@ -130,7 +131,7 @@ genvm-lint check contracts\covenant_vault.py --json
 pytest -q
 ```
 
-Current verification: 15 direct VM tests pass and the GenVM linter validates
+Current verification: 16 direct VM tests pass and the GenVM linter validates
 all 12 public methods.
 
 ## StudioNet deployment
